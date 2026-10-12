@@ -97,6 +97,14 @@ cd "$SRC"
 echo "==> Building"
 make -j"$(nproc)" > "$WORK/make.log" 2>&1 || { tail -80 "$WORK/make.log"; exit 1; }
 
+# Bash bumps a build counter (.build) every time it regenerates version.h, and a
+# parallel make regenerates it more than once (top level + builtins/Makefile), giving
+# "3.2.57(2)-release". macOS reports "(1)", so reset the counter, regenerate once, relink.
+echo 0 > .build
+rm -f version.h
+{ make version.h && make -j"$(nproc)"; } >> "$WORK/make.log" 2>&1 \
+    || { tail -80 "$WORK/make.log"; exit 1; }
+
 echo "==> Testing"
 BASH_BIN="$SRC/bash"
 file "$BASH_BIN"
@@ -104,6 +112,9 @@ file "$BASH_BIN"
 
 got=$("$BASH_BIN" -c 'echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}"')
 [[ "$got" == "$VERSION" ]] || { echo "error: built bash reports $got, expected $VERSION" >&2; exit 1; }
+got=$("$BASH_BIN" -c 'echo "$BASH_VERSION"')
+[[ "$got" == "$VERSION(1)-release" ]] \
+    || { echo "error: BASH_VERSION is $got, expected $VERSION(1)-release (as on macOS)" >&2; exit 1; }
 
 "$BASH_BIN" <<'EOF'
 set -e
