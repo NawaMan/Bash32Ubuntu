@@ -18,10 +18,10 @@ on:
         options: [both, x86_64, arm64]
         default: both
       ubuntu:
-        description: "Ubuntu version to build on"
+        description: "Ubuntu version to build in ('codingbooth' = whatever NawaMan/CodingBooth's base image uses)"
         type: choice
-        options: ["24.04", "22.04"]
-        default: "24.04"
+        options: [codingbooth, "26.04", "24.04", "22.04"]
+        default: codingbooth
       static:
         description: "Link statically (portable across Linux distros/versions)"
         type: boolean
@@ -47,6 +47,7 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
+      ubuntu: ${{ steps.plan.outputs.ubuntu }}
       matrix: ${{ steps.plan.outputs.matrix }}
       has_work: ${{ steps.plan.outputs.has_work }}
     steps:
@@ -58,6 +59,7 @@ jobs:
           UBUNTU: ${{ inputs.ubuntu }}
           STATIC: ${{ inputs.static }}
           FORCE: ${{ inputs.force }}
+          CODINGBOOTH_DOCKERFILE: https://raw.githubusercontent.com/NawaMan/CodingBooth/main/variants/base/Dockerfile
         run: |
           levels=()
           for l in ${PATCH_LEVELS//,/ }; do
@@ -67,6 +69,16 @@ jobs:
             levels+=("$((10#$l))")
           done
           (( ${#levels[@]} > 0 )) || { echo "::error::No patch levels given"; exit 1; }
+
+          if [[ "$UBUNTU" == codingbooth ]]; then
+            UBUNTU=$(curl -fsSL --retry 3 "$CODINGBOOTH_DOCKERFILE" \
+                       | sed -n 's/^ARG UBUNTU_VERSION=\([0-9][0-9]\.[0-9][0-9]\).*/\1/p' | head -1)
+            [[ -n "$UBUNTU" ]] || { echo "::error::Could not read UBUNTU_VERSION from $CODINGBOOTH_DOCKERFILE"; exit 1; }
+            echo "CodingBooth uses Ubuntu $UBUNTU"
+          fi
+          echo "ubuntu=$UBUNTU" >> "$GITHUB_OUTPUT"
+          echo "Building in \`ubuntu:$UBUNTU\`" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
 
           case "$ARCHITECTURES" in
             both) archs=(x86_64 arm64) ;;
@@ -87,7 +99,8 @@ jobs:
                 action="skip (already published)"
               else
                 action="build"
-                runner="ubuntu-$UBUNTU"; [[ "$a" == arm64 ]] && runner+="-arm"
+                # Host runner only; the build itself runs in an ubuntu:$UBUNTU container.
+                runner="ubuntu-24.04"; [[ "$a" == arm64 ]] && runner+="-arm"
                 entries+=("$(jq -nc --arg l "$l" --arg a "$a" --arg r "$runner" \
                   --arg t "$tag" --arg n "$asset" \
                   '{patch_level: $l, arch: $a, runner: $r, tag: $t, asset: $n}')")
@@ -112,6 +125,7 @@ jobs:
     if: needs.plan.outputs.has_work == 'true'
     name: bash 3.2.${{ matrix.patch_level }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+    container: ubuntu:${{ needs.plan.outputs.ubuntu }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -120,9 +134,9 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential bison libncurses-dev autotools-dev gnupg curl file
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates build-essential bison libncurses-dev autotools-dev gnupg curl file
 
       - name: Build
         env:
@@ -130,7 +144,7 @@ jobs:
           STATIC: ${{ inputs.static }}
           ASSET: ${{ matrix.asset }}
         run: |
-          ./build.sh "$PATCH_LEVEL" "$STATIC" dist
+          bash ./build.sh "$PATCH_LEVEL" "$STATIC" dist
           # The plan step predicts asset names; make sure build.sh produced exactly that.
           test -f "dist/$ASSET.tar.gz" || { echo "::error::Expected dist/$ASSET.tar.gz"; ls dist; exit 1; }
 

@@ -11,7 +11,7 @@ Everything is built by GitHub Actions: **Actions → Build Bash 3.2 → Run work
 |---|---|---|
 | `patch_levels` | `57` | Patch levels to build, e.g. `57` or `48,57` (0–57) |
 | `architectures` | `both` | `both`, `x86_64` or `arm64` |
-| `ubuntu` | `24.04` | Ubuntu runner version to build on (`24.04` or `22.04`) |
+| `ubuntu` | `codingbooth` | Ubuntu to build in: `codingbooth` (reads `UBUNTU_VERSION` from [CodingBooth](https://github.com/NawaMan/CodingBooth)'s base image, currently 26.04), or `26.04` / `24.04` / `22.04` |
 | `static` | `true` | Static linking, so the binary runs on any Linux of that architecture |
 | `publish` | `true` | Upload to the GitHub Release `bash-3.2.<N>` |
 | `force` | `false` | Rebuild and overwrite assets that are already published |
@@ -23,7 +23,7 @@ Set `force` to rebuild.
 Each build:
 
 1. Downloads `bash-3.2.tar.gz` plus the official patches `bash32-001..N`, all checked against GNU's GPG keyring.
-2. Builds on the requested Ubuntu, natively on x86_64 and arm64 runners.
+2. Builds inside an `ubuntu:<version>` container, natively on x86_64 and arm64 runners.
 3. Runs smoke tests. These check the version and Bash 3.2 behavior (no `declare -A`, no `${x^^}`), plus a Shellshock check for 3.2.52 and later.
 4. Packages `bash-3.2.<N>-ubuntu<ver>-<arch>-<static|dynamic>.tar.gz` and its `.sha256`.
 
@@ -31,9 +31,9 @@ Each build:
 
 ```sh
 curl -fsSL -o bash32.tar.gz \
-  https://github.com/NawaMan/Bash32Ubuntu/releases/download/bash-3.2.57/bash-3.2.57-ubuntu24.04-x86_64-static.tar.gz
+  https://github.com/NawaMan/Bash32Ubuntu/releases/download/bash-3.2.57/bash-3.2.57-ubuntu26.04-x86_64-static.tar.gz
 tar -xzf bash32.tar.gz
-./bash-3.2.57-ubuntu24.04-x86_64-static/bin/bash --version
+./bash-3.2.57-ubuntu26.04-x86_64-static/bin/bash --version
 ```
 
 ## Notes
