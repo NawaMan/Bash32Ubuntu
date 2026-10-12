@@ -28,8 +28,9 @@ case "$(uname -m)" in
     *) echo "error: unsupported architecture $(uname -m)" >&2; exit 1 ;;
 esac
 
-. /etc/os-release
-DISTRO="${ID}${VERSION_ID}"
+# Read in a subshell: os-release defines VERSION, which would clobber ours.
+DISTRO="$(. /etc/os-release && echo "${ID}${VERSION_ID}")"
+OS_NAME="$(. /etc/os-release && echo "$PRETTY_NAME")"
 LINKAGE=$([[ "$STATIC" == true ]] && echo static || echo dynamic)
 NAME="bash-$VERSION-$DISTRO-$ARCH-$LINKAGE"
 
@@ -139,7 +140,7 @@ cat > "$PKG/BUILD-INFO.txt" <<EOF
 version:      $VERSION ($("$BASH_BIN" -c 'echo $BASH_VERSION'))
 source:       $GNU_URL/bash/bash-3.2.tar.gz + bash32-001..$(printf '%03d' "$PATCH_LEVEL") (GPG verified)
 architecture: $ARCH
-built on:     $PRETTY_NAME
+built on:     $OS_NAME
 compiler:     $(gcc --version | head -1)
 linkage:      $LINKAGE
 built at:     $(date -u +%Y-%m-%dT%H:%M:%SZ)
