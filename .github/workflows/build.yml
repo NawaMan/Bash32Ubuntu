@@ -1,0 +1,169 @@
+name: Build Bash 3.2
+
+# Idempotent: each patch level is published to the release tagged "bash-3.2.<N>",
+# with one asset per Ubuntu version / architecture / linkage. Combinations whose
+# asset already exists are skipped unless "force" is set, in which case they are
+# rebuilt and the existing assets are overwritten.
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch_levels:
+        description: "Bash 3.2 patch levels to build, space or comma separated (0-57). macOS ships 57."
+        type: string
+        default: "57"
+      architectures:
+        description: "CPU architectures"
+        type: choice
+        options: [both, x86_64, arm64]
+        default: both
+      ubuntu:
+        description: "Ubuntu version to build on"
+        type: choice
+        options: ["24.04", "22.04"]
+        default: "24.04"
+      static:
+        description: "Link statically (portable across Linux distros/versions)"
+        type: boolean
+        default: true
+      publish:
+        description: "Publish to GitHub Releases (otherwise only workflow artifacts)"
+        type: boolean
+        default: true
+      force:
+        description: "Rebuild even if already published, overwriting existing assets"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serialize runs so two runs can't race on the same release.
+concurrency:
+  group: build-bash32
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_work: ${{ steps.plan.outputs.has_work }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PATCH_LEVELS: ${{ inputs.patch_levels }}
+          ARCHITECTURES: ${{ inputs.architectures }}
+          UBUNTU: ${{ inputs.ubuntu }}
+          STATIC: ${{ inputs.static }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          levels=()
+          for l in ${PATCH_LEVELS//,/ }; do
+            if ! [[ "$l" =~ ^[0-9]+$ ]] || (( 10#$l > 57 )); then
+              echo "::error::Invalid patch level '$l' (must be 0-57)"; exit 1
+            fi
+            levels+=("$((10#$l))")
+          done
+          (( ${#levels[@]} > 0 )) || { echo "::error::No patch levels given"; exit 1; }
+
+          case "$ARCHITECTURES" in
+            both) archs=(x86_64 arm64) ;;
+            *)    archs=("$ARCHITECTURES") ;;
+          esac
+          linkage=$([[ "$STATIC" == true ]] && echo static || echo dynamic)
+
+          echo "| Version | Arch | Asset | Action |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          entries=()
+          for l in $(printf '%s\n' "${levels[@]}" | sort -nu); do
+            tag="bash-3.2.$l"
+            existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+                         --json assets -q '.assets[].name' 2>/dev/null || true)
+            for a in "${archs[@]}"; do
+              asset="bash-3.2.$l-ubuntu$UBUNTU-$a-$linkage"
+              if grep -qxF "$asset.tar.gz" <<< "$existing" && [[ "$FORCE" != true ]]; then
+                action="skip (already published)"
+              else
+                action="build"
+                runner="ubuntu-$UBUNTU"; [[ "$a" == arm64 ]] && runner+="-arm"
+                entries+=("$(jq -nc --arg l "$l" --arg a "$a" --arg r "$runner" \
+                  --arg t "$tag" --arg n "$asset" \
+                  '{patch_level: $l, arch: $a, runner: $r, tag: $t, asset: $n}')")
+              fi
+              echo "| 3.2.$l | $a | \`$asset\` | $action |" >> "$GITHUB_STEP_SUMMARY"
+            done
+          done
+
+          if (( ${#entries[@]} == 0 )); then
+            echo "Nothing to build; everything requested is already published. Use 'force' to rebuild."
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+          else
+            matrix=$(printf '%s\n' "${entries[@]}" | jq -sc '{include: .}')
+            echo "has_work=true" >> "$GITHUB_OUTPUT"
+            echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+            echo "$matrix" | jq .
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.has_work == 'true'
+    name: bash 3.2.${{ matrix.patch_level }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bison libncurses-dev autotools-dev gnupg curl file
+
+      - name: Build
+        env:
+          PATCH_LEVEL: ${{ matrix.patch_level }}
+          STATIC: ${{ inputs.static }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          ./build.sh "$PATCH_LEVEL" "$STATIC" dist
+          # The plan step predicts asset names; make sure build.sh produced exactly that.
+          test -f "dist/$ASSET.tar.gz" || { echo "::error::Expected dist/$ASSET.tar.gz"; ls dist; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: inputs.publish && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Group assets by patch level -> release tag bash-3.2.<N>.
+          for tag in $(ls dist/*.tar.gz | sed -E 's|.*/(bash-3\.2\.[0-9]+)-.*|\1|' | sort -u); do
+            if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              gh release create "$tag" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "GNU Bash ${tag#bash-} for Ubuntu" \
+                --notes "Prebuilt GNU Bash ${tag#bash-} for Ubuntu (x86_64 / arm64). Each tarball has a matching .sha256 file and a BUILD-INFO.txt inside."
+            fi
+            gh release upload "$tag" dist/"$tag"-* --repo "$GITHUB_REPOSITORY" --clobber
+          done

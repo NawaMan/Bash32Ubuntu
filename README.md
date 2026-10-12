@@ -1,1 +1,44 @@
 # Bash32Ubuntu
+
+Prebuilt GNU Bash 3.2 for Ubuntu Linux (x86_64 and arm64). It is meant for testing
+shell scripts against the Bash that macOS ships as `/bin/bash` (3.2.57).
+
+## Building
+
+Everything is built by GitHub Actions: **Actions → Build Bash 3.2 → Run workflow**.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `patch_levels` | `57` | Patch levels to build, e.g. `57` or `48,57` (0–57) |
+| `architectures` | `both` | `both`, `x86_64` or `arm64` |
+| `ubuntu` | `24.04` | Ubuntu runner version to build on (`24.04` or `22.04`) |
+| `static` | `true` | Static linking, so the binary runs on any Linux of that architecture |
+| `publish` | `true` | Upload to the GitHub Release `bash-3.2.<N>` |
+| `force` | `false` | Rebuild and overwrite assets that are already published |
+
+The workflow is idempotent. A combination whose asset is already in the release
+gets skipped, and the run summary lists what was built and what was skipped.
+Set `force` to rebuild.
+
+Each build:
+
+1. Downloads `bash-3.2.tar.gz` plus the official patches `bash32-001..N`, all checked against GNU's GPG keyring.
+2. Builds on the requested Ubuntu, natively on x86_64 and arm64 runners.
+3. Runs smoke tests. These check the version and Bash 3.2 behavior (no `declare -A`, no `${x^^}`), plus a Shellshock check for 3.2.52 and later.
+4. Packages `bash-3.2.<N>-ubuntu<ver>-<arch>-<static|dynamic>.tar.gz` and its `.sha256`.
+
+## Using
+
+```sh
+curl -fsSL -o bash32.tar.gz \
+  https://github.com/NawaMan/Bash32Ubuntu/releases/download/bash-3.2.57/bash-3.2.57-ubuntu24.04-x86_64-static.tar.gz
+tar -xzf bash32.tar.gz
+./bash-3.2.57-ubuntu24.04-x86_64-static/bin/bash --version
+```
+
+## Notes
+
+- arm64 builds use GitHub's `ubuntu-*-arm` hosted runners. These are free for public repositories only.
+- This is upstream GNU Bash, not Apple's build, so it matches macOS very closely but not exactly.
+  macOS `/bin/sh` is Bash 3.2 in POSIX mode; use `bash --posix` to approximate it.
+- It tests the shell only. macOS userland tools (BSD `sed`, `date`, …) behave differently from GNU's.
