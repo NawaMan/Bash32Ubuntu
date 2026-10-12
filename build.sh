@@ -78,9 +78,13 @@ cp /usr/share/misc/config.guess /usr/share/misc/config.sub "$SRC/support/"
 echo "==> Configuring ($LINKAGE)"
 # Bash 3.2 is pre-C99 K&R-style code. Keep modern GCC (10+ / 14+ / 15+) from
 # rejecting it: old C dialect, common symbols, and implicit declarations allowed.
-export CFLAGS="-O2 -g0 -std=gnu89 -fcommon \
+# The flags live in CC itself (not just CFLAGS) because build-time helpers such as
+# builtins/mkbuiltins are compiled with CC_FOR_BUILD, which ignores CFLAGS.
+export CC="gcc -std=gnu89 -fcommon \
     -Wno-implicit-function-declaration -Wno-implicit-int \
     -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-return-type"
+export CC_FOR_BUILD="$CC"
+export CFLAGS="-O2 -g0"
 
 configure_args=(--prefix=/usr/local --without-bash-malloc)
 [[ "$STATIC" == true ]] && configure_args+=(--enable-static-link)
