@@ -161,6 +161,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -172,12 +174,16 @@ jobs:
         run: |
           # Group assets by patch level -> release tag bash-3.2.<N>.
           for tag in $(ls dist/*.tar.gz | sed -E 's|.*/(bash-3\.2\.[0-9]+)-.*|\1|' | sort -u); do
-            if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            ./release-notes.sh "${tag##*.}" > notes.md
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              # Keep notes (e.g. the Shellshock warning) in sync with release-notes.sh.
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+            else
               gh release create "$tag" \
                 --repo "$GITHUB_REPOSITORY" \
                 --target "$GITHUB_SHA" \
                 --title "GNU Bash ${tag#bash-} for Ubuntu" \
-                --notes "Prebuilt GNU Bash ${tag#bash-} for Ubuntu (x86_64 / arm64). Each tarball has a matching .sha256 file and a BUILD-INFO.txt inside."
+                --notes-file notes.md
             fi
             gh release upload "$tag" dist/"$tag"-* --repo "$GITHUB_REPOSITORY" --clobber
           done
