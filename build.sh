@@ -85,6 +85,11 @@ for ((i = 1; i <= PATCH_LEVEL; i++)); do
     patch -d "$SRC" -p0 -s < "$DL/$(printf 'bash32-%03d' "$i")"
 done
 
+# Patches 011 and 026 update configure.in together with the regenerated configure, but
+# patching can leave configure.in the newer file, so make tries to rerun autoconf (e.g.
+# at 3.2.11-3.2.25). The patched configure/config.h.in are already correct: mark them current.
+touch "$SRC/configure" "$SRC/config.h.in"
+
 actual=$(sed -n 's/^#define PATCHLEVEL[[:space:]]*\([0-9]*\).*/\1/p' "$SRC/patchlevel.h")
 if [[ "$actual" != "$PATCH_LEVEL" ]]; then
     echo "error: patchlevel.h says $actual, expected $PATCH_LEVEL" >&2
