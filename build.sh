@@ -88,7 +88,11 @@ done
 # Patches 011 and 026 update configure.in together with the regenerated configure, but
 # patching can leave configure.in the newer file, so make tries to rerun autoconf (e.g.
 # at 3.2.11-3.2.25). The patched configure/config.h.in are already correct: mark them current.
-touch "$SRC/configure" "$SRC/config.h.in"
+# Use explicit, strictly increasing timestamps; a plain `touch configure config.h.in` can
+# straddle a clock tick and leave config.h.in newer than configure (seen at 3.2.7).
+touch -d '2000-01-01 00:00:00' "$SRC/configure.in" "$SRC/aclocal.m4"
+touch -d '2000-01-01 00:00:01' "$SRC/config.h.in"
+touch -d '2000-01-01 00:00:02' "$SRC/configure"
 
 actual=$(sed -n 's/^#define PATCHLEVEL[[:space:]]*\([0-9]*\).*/\1/p' "$SRC/patchlevel.h")
 if [[ "$actual" != "$PATCH_LEVEL" ]]; then
