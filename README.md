@@ -22,7 +22,7 @@ Set `force` to rebuild.
 
 Each build:
 
-1. Downloads `bash-3.2.tar.gz` plus the official patches `bash32-001..N`, all checked against GNU's GPG keyring.
+1. Downloads `bash-3.2.tar.gz` plus the official patches `bash32-001..N` from `ftp.gnu.org`, falling back to GNU mirrors. Every file must carry a valid GPG signature from the Bash maintainer's key (`7C0135FB088AAF6C66C650B9BB5869F064EA74AB`).
 2. Builds inside an `ubuntu:<version>` container, natively on x86_64 and arm64 runners.
 3. Runs smoke tests. These check the version and Bash 3.2 behavior (no `declare -A`, no `${x^^}`), plus a Shellshock check for 3.2.52 and later.
 4. Packages `bash-3.2.<N>-ubuntu<ver>-<arch>-<static|dynamic>.tar.gz` and its `.sha256`.
