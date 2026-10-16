@@ -148,7 +148,8 @@ set -e
 fail() { echo "smoke test failed: $*" >&2; exit 1; }
 
 arr=(a b c); [[ ${#arr[@]} -eq 3 ]]          || fail "indexed arrays"
-[[ "abc123" =~ ^[a-z]+([0-9]+)$ ]]           || fail "[[ =~ ]]"
+# Regex in a variable: before bash32-003, an inline regex containing `(` is a syntax error.
+re='^[a-z]+([0-9]+)$'; [[ "abc123" =~ $re ]] || fail "[[ =~ ]]"
 [[ "${BASH_REMATCH[1]}" == 123 ]]            || fail "BASH_REMATCH"
 [[ "$(printf '%05d' 42)" == 00042 ]]         || fail "printf"
 s="hello world"; [[ "${s/world/bash}" == "hello bash" ]] || fail "substitution"
