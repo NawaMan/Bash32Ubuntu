@@ -175,15 +175,19 @@ jobs:
           # Group assets by patch level -> release tag bash-3.2.<N>.
           for tag in $(ls dist/*.tar.gz | sed -E 's|.*/(bash-3\.2\.[0-9]+)-.*|\1|' | sort -u); do
             ./release-notes.sh "${tag##*.}" > notes.md
+            # Only the newest patch level gets GitHub's "Latest" badge; backfilling an
+            # older one must not take it (GitHub otherwise gives it to the newest release).
+            latest=$([[ "${tag##*.}" == 57 ]] && echo true || echo false)
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
               # Keep notes (e.g. the Shellshock warning) in sync with release-notes.sh.
-              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md --latest="$latest"
             else
               gh release create "$tag" \
                 --repo "$GITHUB_REPOSITORY" \
                 --target "$GITHUB_SHA" \
                 --title "GNU Bash ${tag#bash-} for Ubuntu" \
-                --notes-file notes.md
+                --notes-file notes.md \
+                --latest="$latest"
             fi
             gh release upload "$tag" dist/"$tag"-* --repo "$GITHUB_REPOSITORY" --clobber
           done
